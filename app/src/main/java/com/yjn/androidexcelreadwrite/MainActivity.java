@@ -5,21 +5,16 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.OpenableColumns;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import net.sourceforge.pinyin4j.PinyinHelper;
 import net.sourceforge.pinyin4j.format.HanyuPinyinCaseType;
@@ -34,6 +29,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 public class MainActivity extends AppCompatActivity {
     public static final String TAG = MainActivity.class.getSimpleName();
@@ -84,7 +86,7 @@ public class MainActivity extends AppCompatActivity {
                 if (readExcelList.size() > 0) {
                     openFolderSelector();
                 } else {
-                    Toast.makeText(mContext, "please import excel first", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(mContext, "请先导入文件", Toast.LENGTH_SHORT).show();
                 }
                 break;
             default:
@@ -126,7 +128,7 @@ public class MainActivity extends AppCompatActivity {
             if (uri == null) return;
             String uriPath = uri.getPath();
             Log.i(TAG, "onActivityResult: " + "filePath：" + uriPath);
-            Toast.makeText(mContext, "Exporting...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(mContext, "导入中...", Toast.LENGTH_SHORT).show();
             //you can modify readExcelList, then write to excel.
 
             List<Map<Integer, Object>> tempList = new ArrayList<>();
@@ -150,48 +152,80 @@ public class MainActivity extends AppCompatActivity {
 //            readExcelList.add(0, second);
             readExcelList.add(0, first);
             ArrayList<String> nameList = new ArrayList<>();
-            for (int j = 0; j < readExcelList.size(); j++) {
-                tempList.clear();
+            ProgressDialogUtil.setMsg(this, "生成中,请等待...", false);
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    for (int j = 0; j < readExcelList.size(); j++) {
+                        tempList.clear();
 
-                Log.d("tago", "开始检测: " + j);
-                Map<Integer, Object> item = readExcelList.get(j);
-                String name = (String) item.get(0);
-                if (nameList.contains(name)) {
-                    Log.d("tago", "开始检测: " + j + ", return " + name);
-                    continue;
-                }
-                nameList.add(name);
-                String s = initCrashLogFolder(this) + "/" + name + ".xlsx";
+                        Log.d("tago", "开始检测: " + j);
+                        Map<Integer, Object> item = readExcelList.get(j);
+                        String name = (String) item.get(0);
+                        if (nameList.contains(name)) {
+                            Log.d("tago", "开始检测: " + j + ", return " + name);
+                            continue;
+                        }
+                        nameList.add(name);
+                        String s = initCrashLogFolder(MainActivity.this) + "/" + name + ".xlsx";
 
-                File file = new File(s);
-                try {
-                    file.createNewFile();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                Uri newUri = Uri.fromFile(file);
+                        File file = new File(s);
+                        try {
+                            file.createNewFile();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        Uri newUri = Uri.fromFile(file);
 
-                tempList.add(readExcelList.get(0));
+                        tempList.add(readExcelList.get(0));
 //                tempList.add(readExcelList.get(1));
 
-                for (int k = j; k < readExcelList.size(); k++) {
-                    Map<Integer, Object> innerItem = readExcelList.get(k);
-                    String innerName = (String) innerItem.get(0);
-                    if (TextUtils.equals(innerName, name)) {
-                        tempList.add(innerItem);
-                    } else {
-                        break;
+                        for (int k = j; k < readExcelList.size(); k++) {
+                            Map<Integer, Object> innerItem = readExcelList.get(k);
+                            String innerName = (String) innerItem.get(0);
+                            if (TextUtils.equals(innerName, name)) {
+                                tempList.add(innerItem);
+                            } else {
+                                break;
+                            }
+                        }
+
+                        totalSize++;
+                        Log.d("tago", "生成文件: " + name);
+                        ExcelUtil.writeExcelNew(MainActivity.this, tempList, newUri);
                     }
+
+                    runOnUiThread(() -> {
+                        Toast.makeText(mContext, "导入成功!", Toast.LENGTH_SHORT).show();
+                        tv_create_num.setText("导出文件数量: " + (totalSize - 1));
+                        Log.d("tago", "onActivityResult: 生成文件总数: " + totalSize + ", " + readExcelList.size());
+                        ProgressDialogUtil.dismiss(mContext);
+                    });
                 }
-
-                totalSize++;
-                Log.d("tago", "生成文件: " + name);
-                ExcelUtil.writeExcelNew(this, tempList, newUri);
-            }
-
-            tv_create_num.setText("导出文件数量: " + (totalSize-1));
-            Log.d("tago", "onActivityResult: 生成文件总数: " + totalSize + ", " + readExcelList.size());
+            }).start();
         }
+    }
+
+    public String getFileName(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+            try {
+                if (cursor != null && cursor.moveToFirst()) {
+                    result = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        if (result == null) {
+            result = uri.getPath();
+            int cut = result.lastIndexOf('/');
+            if (cut != -1) {
+                result = result.substring(cut + 1);
+            }
+        }
+        return result;
     }
 
     public static String initCrashLogFolder(Context context) {
@@ -314,7 +348,8 @@ public class MainActivity extends AppCompatActivity {
             Log.i(TAG, "doInBackground: Importing...");
             runOnUiThread(() -> Toast.makeText(mContext, "Importing...", Toast.LENGTH_SHORT).show());
 
-            List<Map<Integer, Object>> readExcelNew = ExcelUtil.readExcelNew(mContext, uri, uri.getPath());
+//            List<Map<Integer, Object>> readExcelNew = ExcelUtil.readExcelNew(mContext, uri, uri.getPath());
+            List<Map<Integer, Object>> readExcelNew = ExcelUtil.readExcelNew(mContext, uri, getFileName(uri));
 
             Log.i(TAG, "onActivityResult:readExcelNew " + ((readExcelNew != null) ? readExcelNew.size() : ""));
 
@@ -324,9 +359,9 @@ public class MainActivity extends AppCompatActivity {
                 updateUI();
 
                 Log.i(TAG, "run: successfully imported");
-                runOnUiThread(() -> Toast.makeText(mContext, "successfully imported", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> Toast.makeText(mContext, "导入成功", Toast.LENGTH_SHORT).show());
             } else {
-                runOnUiThread(() -> Toast.makeText(mContext, "no data", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> Toast.makeText(mContext, "文件没有数据", Toast.LENGTH_SHORT).show());
             }
         }).start();
     }

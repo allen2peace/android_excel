@@ -134,11 +134,11 @@ public class ExcelUtil {
             outputStream.flush();
             outputStream.close();
             Log.i(TAG, "writeExcel: export successful");
-            Toast.makeText(context, "export successful", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(context, "export successful", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             e.printStackTrace();
             Log.e(TAG, "writeExcel: error" + e);
-            Toast.makeText(context, "export error" + e, Toast.LENGTH_SHORT).show();
+//            Toast.makeText(context, "export error" + e, Toast.LENGTH_SHORT).show();
         }
     }
 
